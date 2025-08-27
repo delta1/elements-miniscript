@@ -50,7 +50,7 @@ on:
 jobs:
   fuzz:
     if: \${{ !github.event.act }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -60,8 +60,8 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
     steps:
       - name: Install test dependencies
         run: sudo apt-get update -y && sudo apt-get install -y binutils-dev libunwind8-dev libcurl4-openssl-dev libelf-dev libdw-dev cmake gcc libiberty-dev
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
         id: cache-fuzz
         with:
           path: |
@@ -69,11 +69,7 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
             fuzz/target
             target
           key: cache-\${{ matrix.target }}-\${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.63
-          override: true
-          profile: minimal
+      - uses: dtolnay/rust-toolchain@1.63
       - name: fuzz
         run: |
           if [[ "\${{ matrix.fuzz_target }}" =~ ^bitcoin ]]; then
@@ -92,11 +88,10 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
     needs: fuzz
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v2
       - name: Display structure of downloaded files
         run: ls -R
       - run: find executed_* -type f -exec cat {} + | sort > executed
       - run: source ./fuzz/fuzz-util.sh && listTargetNames | sort | diff - executed
 EOF
-

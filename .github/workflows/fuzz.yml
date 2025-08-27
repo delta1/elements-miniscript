@@ -11,26 +11,26 @@ on:
 jobs:
   fuzz:
     if: ${{ !github.event.act }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         fuzz_target: [
-roundtrip_miniscript_str,
-roundtrip_miniscript_script,
-parse_descriptor,
 roundtrip_semantic,
-parse_descriptor_secret,
-roundtrip_descriptor,
-roundtrip_concrete,
 compile_descriptor,
+parse_descriptor,
+roundtrip_miniscript_str,
+roundtrip_concrete,
+parse_descriptor_secret,
 roundtrip_confidential,
+roundtrip_descriptor,
+roundtrip_miniscript_script,
         ]
     steps:
       - name: Install test dependencies
         run: sudo apt-get update -y && sudo apt-get install -y binutils-dev libunwind8-dev libcurl4-openssl-dev libelf-dev libdw-dev cmake gcc libiberty-dev
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
         id: cache-fuzz
         with:
           path: |
@@ -38,11 +38,7 @@ roundtrip_confidential,
             fuzz/target
             target
           key: cache-${{ matrix.target }}-${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.65
-          override: true
-          profile: minimal
+      - uses: dtolnay/rust-toolchain@1.63
       - name: fuzz
         run: |
           if [[ "${{ matrix.fuzz_target }}" =~ ^bitcoin ]]; then
@@ -61,8 +57,8 @@ roundtrip_confidential,
     needs: fuzz
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v2
       - name: Display structure of downloaded files
         run: ls -R
       - run: find executed_* -type f -exec cat {} + | sort > executed
