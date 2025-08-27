@@ -10,6 +10,7 @@ rustc --version
 # Pin dependencies required to build with Rust 1.63
 if cargo --version | grep "1\.63"; then
     cargo update -p regex --precise 1.8.4
+    cargo update -p regex-automata --precise 0.4.9
 fi
 
 # Format if told to
