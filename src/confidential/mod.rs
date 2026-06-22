@@ -33,7 +33,7 @@ use crate::descriptor::{
 };
 use crate::expression::FromTree;
 use crate::extensions::{CovExtArgs, CovenantExt, Extension, ParseableExt};
-use crate::{expression, Error, MiniscriptKey, ToPublicKey};
+use crate::{expression, Error, MiniscriptKey, ToPublicKey, TranslatePk, Translator};
 
 /// A description of a blinding key
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -162,6 +162,23 @@ impl<T: Extension + ParseableExt> Descriptor<DescriptorPublicKey, T> {
         Ok(Descriptor{
             key: definite_key,
             descriptor: definite_descriptor,
+        })
+    }
+}
+
+impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
+    /// Converts a descriptor using one kind of keys to another kind of key.
+    ///
+    /// The blinding [`Key`] is preserved as-is; only the inner script descriptor's
+    /// keys are translated via the supplied [`Translator`].
+    pub fn translate_pk<Q, E, Tr>(&self, t: &mut Tr) -> Result<Descriptor<Q, Ext>, E>
+    where
+        Q: MiniscriptKey,
+        Tr: Translator<Pk, Q, E>,
+    {
+        Ok(Descriptor {
+            key: self.key.clone(),
+            descriptor: self.descriptor.translate_pk(t)?,
         })
     }
 }
@@ -329,7 +346,6 @@ mod tests {
             "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH",
         )
         .unwrap();
-
 
         let single_ct_key = DescriptorPublicKey::from_str(
             "02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623",
