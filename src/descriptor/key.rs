@@ -2,7 +2,7 @@
 use std::borrow::Borrow;
 use std::convert::TryInto;
 use std::str::FromStr;
-use std::{error, fmt};
+use std::{error, fmt, hash};
 
 use bitcoin::bip32::XKeyIdentifier;
 use bitcoin::{self, bip32};
@@ -196,6 +196,49 @@ pub enum Wildcard {
     Hardened,
 }
 
+impl fmt::Display for Wildcard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Wildcard::None => write!(f, ""),
+            Wildcard::Unhardened => write!(f, "/*"),
+            Wildcard::Hardened => write!(f, "/*h"),
+        }
+    }
+}
+
+impl fmt::Display for SinglePub {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        maybe_fmt_master_id(f, &self.origin)?;
+        match self.key {
+            SinglePubKey::FullKey(full_key) => full_key.fmt(f),
+            SinglePubKey::XOnly(x_only_key) => x_only_key.fmt(f),
+        }?;
+        Ok(())
+    }
+}
+
+impl MiniscriptKey for SinglePub {
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
+
+    fn is_x_only_key(&self) -> bool {
+        matches!(self.key, SinglePubKey::XOnly(_))
+    }
+
+    fn num_der_paths(&self) -> usize {
+        0
+    }
+
+    fn is_uncompressed(&self) -> bool {
+        match self.key {
+            SinglePubKey::FullKey(ref key) => key.is_uncompressed(),
+            _ => false,
+        }
+    }
+}
+
 impl SinglePriv {
     /// Returns the public key of this key.
     fn to_public<C: Signing>(&self, secp: &Secp256k1<C>) -> SinglePub {
@@ -262,6 +305,62 @@ impl DescriptorXKey<bip32::Xpriv> {
     }
 }
 
+impl<K: InnerXKey> fmt::Display for DescriptorXKey<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        maybe_fmt_master_id(f, &self.origin)?;
+        self.xkey.fmt(f)?;
+        fmt_derivation_path(f, &self.derivation_path)?;
+        self.wildcard.fmt(f)?;
+        Ok(())
+    }
+}
+
+impl<K> MiniscriptKey for DescriptorXKey<K>
+where
+    K: InnerXKey + Clone + Ord + Eq + hash::Hash + fmt::Debug,
+{
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
+
+    fn is_x_only_key(&self) -> bool {
+        false
+    }
+
+    fn num_der_paths(&self) -> usize {
+        1
+    }
+}
+
+impl<K: InnerXKey> fmt::Display for DescriptorMultiXKey<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        maybe_fmt_master_id(f, &self.origin)?;
+        self.xkey.fmt(f)?;
+        fmt_derivation_paths(f, self.derivation_paths.paths())?;
+        self.wildcard.fmt(f)?;
+        Ok(())
+    }
+}
+
+impl<K> MiniscriptKey for DescriptorMultiXKey<K>
+where
+    K: InnerXKey + Clone + Ord + Eq + hash::Hash + fmt::Debug,
+{
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
+
+    fn is_x_only_key(&self) -> bool {
+        false
+    }
+
+    fn num_der_paths(&self) -> usize {
+        self.derivation_paths.paths().len()
+    }
+}
+
 /// Descriptor Key parsing errors
 // FIXME: replace with error enums
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -282,36 +381,9 @@ impl error::Error for DescriptorKeyParseError {
 impl fmt::Display for DescriptorPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            DescriptorPublicKey::Single(ref pk) => {
-                maybe_fmt_master_id(f, &pk.origin)?;
-                match pk.key {
-                    SinglePubKey::FullKey(full_key) => full_key.fmt(f),
-                    SinglePubKey::XOnly(x_only_key) => x_only_key.fmt(f),
-                }?;
-                Ok(())
-            }
-            DescriptorPublicKey::XPub(ref xpub) => {
-                maybe_fmt_master_id(f, &xpub.origin)?;
-                xpub.xkey.fmt(f)?;
-                fmt_derivation_path(f, &xpub.derivation_path)?;
-                match xpub.wildcard {
-                    Wildcard::None => {}
-                    Wildcard::Unhardened => write!(f, "/*")?,
-                    Wildcard::Hardened => write!(f, "/*h")?,
-                }
-                Ok(())
-            }
-            DescriptorPublicKey::MultiXPub(ref xpub) => {
-                maybe_fmt_master_id(f, &xpub.origin)?;
-                xpub.xkey.fmt(f)?;
-                fmt_derivation_paths(f, xpub.derivation_paths.paths())?;
-                match xpub.wildcard {
-                    Wildcard::None => {}
-                    Wildcard::Unhardened => write!(f, "/*")?,
-                    Wildcard::Hardened => write!(f, "/*h")?,
-                }
-                Ok(())
-            }
+            Self::Single(ref pk) => pk.fmt(f),
+            Self::XPub(ref xpub) => xpub.fmt(f),
+            Self::MultiXPub(ref xpub) => xpub.fmt(f),
         }
     }
 }
@@ -1006,9 +1078,9 @@ impl MiniscriptKey for DescriptorPublicKey {
 
     fn num_der_paths(&self) -> usize {
         match self {
-            DescriptorPublicKey::Single(_) => 0,
-            DescriptorPublicKey::XPub(_) => 1,
-            DescriptorPublicKey::MultiXPub(xpub) => xpub.derivation_paths.paths().len(),
+            DescriptorPublicKey::Single(single) => single.num_der_paths(),
+            DescriptorPublicKey::XPub(xpub) => xpub.num_der_paths(),
+            DescriptorPublicKey::MultiXPub(xpub) => xpub.num_der_paths(),
         }
     }
 }
